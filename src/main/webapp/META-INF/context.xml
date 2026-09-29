@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tomcat context for LOCAL DEVELOPMENT. Values come from environment variables
+  (CIVIC_DB_URL, CIVIC_DB_USER, CIVIC_DB_PASSWORD) via Tomcat's property substitution,
+  so no credentials are committed. Requires the PostgreSQL JDBC jar in $CATALINA_HOME/lib
+  and, for ${...} substitution of env vars, this line in $CATALINA_BASE/conf/catalina.properties:
+     org.apache.tomcat.util.digester.PROPERTY_SOURCE=org.apache.tomcat.util.digester.EnvironmentPropertySource
+  If the JNDI resource is unavailable the app falls back to the same environment variables directly.
+-->
+<Context>
+  <Resource name="jdbc/CivicConnectDB" auth="Container" type="javax.sql.DataSource"
+            factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
+            driverClassName="org.postgresql.Driver"
+            url="${CIVIC_DB_URL}" username="${CIVIC_DB_USER}" password="${CIVIC_DB_PASSWORD}"
+            maxActive="20" minIdle="2" maxIdle="5" maxWait="10000"
+            testOnBorrow="true" validationQuery="SELECT 1" defaultAutoCommit="true"/>
+
+  <!-- DEV ONLY: pretend the signed-in user is a MANAGER until the login module sets the
+       "userRole" session attribute. Set value="" (or delete) for any shared/deployed server. -->
+  <Parameter name="civicconnect.devAutoLoginRole" value="MANAGER" override="false"/>
+</Context>

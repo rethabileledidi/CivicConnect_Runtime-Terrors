@@ -1,0 +1,6 @@
+target/
+*.iml
+.idea/
+nbproject/private/
+.env
+*.local.properties

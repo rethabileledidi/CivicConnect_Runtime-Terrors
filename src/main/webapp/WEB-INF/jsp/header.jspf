@@ -1,0 +1,13 @@
+<%@ taglib prefix="c" uri="jakarta.tags.core" %>
+<header class="topbar">
+  <a class="brand" href="${pageContext.request.contextPath}/dashboard">CivicConnect &middot; Oversight</a>
+  <nav>
+    <a href="${pageContext.request.contextPath}/dashboard" class="${nav == 'dashboard' ? 'active' : ''}">Dashboard</a>
+    <a href="${pageContext.request.contextPath}/reports/requests?report=open" class="${nav == 'open' ? 'active' : ''}">Open</a>
+    <a href="${pageContext.request.contextPath}/reports/requests?report=overdue&sort=overdue&dir=desc" class="${nav == 'overdue' ? 'active' : ''}">Overdue</a>
+    <a href="${pageContext.request.contextPath}/reports/requests?report=resolved" class="${nav == 'resolved' ? 'active' : ''}">Resolved</a>
+    <a href="${pageContext.request.contextPath}/reports/requests?report=closed" class="${nav == 'closed' ? 'active' : ''}">Closed</a>
+    <a href="${pageContext.request.contextPath}/reports/requests?report=all" class="${nav == 'all' ? 'active' : ''}">All requests</a>
+  </nav>
+  <span class="who">Signed in as <c:out value="${currentRole}"/></span>
+</header>
