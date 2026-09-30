@@ -18,11 +18,12 @@ export function SiteHeader({ transparent = false }: { transparent?: boolean }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  const links = [
+  const links: { to: "/" | "/report" | "/dashboard" | "/staff"; label: string }[] = [
     { to: "/", label: "Home" },
     { to: "/report", label: "Report an issue" },
     { to: "/dashboard", label: "My dashboard" },
-  ] as const;
+  ];
+  if (user && user.role !== "RESIDENT") links.push({ to: "/staff", label: "Work queue" });
 
   return (
     <header
@@ -56,7 +57,11 @@ export function SiteHeader({ transparent = false }: { transparent?: boolean }) {
         <div className="flex items-center gap-2">
           {user ? (
             <>
-              <Popover onOpenChange={(o) => o && user && markNotificationsRead(user.email)}>
+              <Popover
+                onOpenChange={(o) => {
+                  if (o && unread > 0) void markNotificationsRead().catch(() => undefined);
+                }}
+              >
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative rounded-full">
                     <Bell className="size-5" />
@@ -95,8 +100,9 @@ export function SiteHeader({ transparent = false }: { transparent?: boolean }) {
                 className="rounded-full"
                 aria-label="Sign out"
                 onClick={() => {
-                  logout();
-                  navigate({ to: "/auth" });
+                  void logout()
+                    .catch(() => undefined)
+                    .finally(() => navigate({ to: "/auth" }));
                 }}
               >
                 <LogOut className="size-5" />

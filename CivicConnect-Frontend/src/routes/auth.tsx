@@ -5,7 +5,7 @@ import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { loginUser, registerUser } from "@/lib/civic";
+import { ApiError, loginUser, registerUser } from "@/lib/civic";
 import { useAuth } from "@/lib/use-civic";
 import heroPotholes from "@/assets/hero-potholes.jpg";
 
@@ -38,21 +38,25 @@ const phoneRe = /^0\d{9}$/;
 function AuthPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [errors, setErrors] = useState<Errors>({});
+  const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
 
   useEffect(() => {
-    if (user) navigate({ to: "/dashboard" });
+    if (user) navigate({ to: user.role === "RESIDENT" ? "/dashboard" : "/staff" });
   }, [user, navigate]);
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const v = (k: string) => String(form.get(k) ?? "").trim();
     const next: Errors = {};
 
     if (!emailRe.test(v("email"))) next["email"] = "Enter a valid email address.";
-    if (v("password").length < 6) next["password"] = "Password must be at least 6 characters.";
+    // NIST SP 800-63B-4: at least 15 characters for a password used on its own. The server enforces it too.
+    if (mode === "register" && v("password").length < 15)
+      next["password"] = "Use at least 15 characters. A short sentence works well.";
+    if (mode === "login" && !v("password")) next["password"] = "Enter your password.";
 
     if (mode === "register") {
       if (v("fullName").length < 3) next["fullName"] = "Enter your full name.";
@@ -64,23 +68,32 @@ function AuthPage() {
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
+    setBusy(true);
     try {
       if (mode === "register") {
-        registerUser({
+        await registerUser({
           fullName: v("fullName"),
           email: v("email"),
           phone: v("phone"),
           municipality: v("municipality"),
           password: v("password"),
+          confirmPassword: v("confirm"),
         });
         toast.success("Account created", { description: "Welcome to CivicConnect." });
       } else {
-        loginUser(v("email"), v("password"));
+        const signedIn = await loginUser(v("email"), v("password"));
         toast.success("Signed in");
+        if (signedIn.role !== "RESIDENT") {
+          navigate({ to: "/staff" });
+          return;
+        }
       }
       navigate({ to: "/dashboard" });
     } catch (err) {
+      if (err instanceof ApiError && Object.keys(err.fieldErrors).length > 0) setErrors(err.fieldErrors);
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -183,13 +196,13 @@ function AuthPage() {
               </div>
             )}
 
-            <Button type="submit" className="w-full rounded-full shadow-glow" size="lg">
-              {mode === "login" ? "Sign in" : "Create account"}
+            <Button type="submit" className="w-full rounded-full shadow-glow" size="lg" disabled={busy}>
+              {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Accounts are stored on this device for the prototype build.
+            Passwords are stored as salted PBKDF2 hashes. Five wrong attempts lock the account for 15 minutes.
           </p>
         </div>
       </div>

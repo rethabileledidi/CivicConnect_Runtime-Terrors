@@ -1,10 +1,54 @@
 /**
  * CivicConnect — requester module data layer.
- * Frontend-only store backed by browser localStorage (Person 1 scope).
+ *
+ * M2: the localStorage store is replaced by the Java backend's REST API (/api). Function names
+ * are kept from the prototype so the pages change as little as possible; they are now async.
+ * The static CATEGORIES list is kept only for the landing page's marketing cards — the request
+ * form uses the real categories from the database (fetchCategories).
  */
+import {
+  api,
+  ApiError,
+  type ApiAction,
+  type ApiCategory,
+  type ApiChangeResult,
+  type ApiDetail,
+  type ApiMessage,
+  type ApiNotification,
+  type ApiStaffMember,
+  type ApiSummary,
+  type ApiUser,
+} from "./api";
 
-export type RequestStatus = "Submitted" | "In Progress" | "Resolved" | "Rejected";
+export { ApiError };
+export type { ApiAction, ApiCategory, ApiDetail, ApiMessage, ApiStaffMember, ApiSummary };
+
+export type RequestStatus =
+  | "Submitted"
+  | "Assigned"
+  | "In Progress"
+  | "Reopened"
+  | "Resolved"
+  | "Closed"
+  | "Rejected";
+
 export type Priority = "Low" | "Medium" | "High" | "Emergency";
+export type ApiPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+
+export const PRIORITY_TO_API: Record<Priority, ApiPriority> = {
+  Low: "LOW",
+  Medium: "MEDIUM",
+  High: "HIGH",
+  Emergency: "URGENT",
+};
+export const PRIORITY_LABEL: Record<ApiPriority, Priority> = {
+  LOW: "Low",
+  MEDIUM: "Medium",
+  HIGH: "High",
+  URGENT: "Emergency",
+};
+
+/* ---------- Landing-page marketing categories (static content) ---------- */
 
 export type CategoryId = "roads" | "water" | "electricity" | "waste" | "lighting" | "safety";
 
@@ -22,7 +66,7 @@ export const CATEGORIES: CategoryInfo[] = [
     name: "Roads & Potholes",
     blurb: "Potholes, collapsed kerbs, damaged road markings and blocked storm drains.",
     examples: ["Pothole", "Damaged kerb", "Blocked storm drain", "Faded road markings"],
-    sla: "14 working days",
+    sla: "3–5 days",
   },
   {
     id: "water",
@@ -43,63 +87,71 @@ export const CATEGORIES: CategoryInfo[] = [
     name: "Waste Removal",
     blurb: "Missed collections, illegal dumping and overflowing public bins.",
     examples: ["Missed collection", "Illegal dumping", "Overflowing bin"],
-    sla: "7 working days",
+    sla: "3–7 days",
   },
   {
     id: "lighting",
     name: "Street Lighting",
     blurb: "Street lights out, flickering lights and damaged poles.",
     examples: ["Street light out", "Damaged pole", "Light on during the day"],
-    sla: "10 working days",
+    sla: "7 days",
   },
   {
     id: "safety",
-    name: "Public Safety",
-    blurb: "Broken traffic lights, open manholes, vandalised facilities and unsafe structures.",
-    examples: ["Robot not working", "Open manhole", "Vandalised facility"],
-    sla: "24 hours",
+    name: "Parks & Public Spaces",
+    blurb: "Damaged park facilities, overgrown grass and unsafe public spaces.",
+    examples: ["Broken swings", "Overgrown grass", "Vandalised facility"],
+    sla: "10 days",
   },
 ];
 
 export const categoryById = (id: string) => CATEGORIES.find((c) => c.id === id);
 
-export type StatusEvent = {
-  status: RequestStatus;
-  note: string;
-  at: string;
-};
+/** "48 hours" / "5 days" from the database SLA. */
+export function formatSla(hours: number) {
+  return hours % 24 === 0 && hours >= 48 ? `${hours / 24} days` : `${hours} hours`;
+}
+
+/* ---------- Types the pages use ---------- */
+
+export type StatusEvent = { status: RequestStatus; note: string; at: string; by: string };
 
 export type ServiceRequest = {
   id: string;
+  numericId: number;
   reference: string;
-  userEmail: string;
-  category: CategoryId;
+  categoryName: string;
   title: string;
   description: string;
-  address: string;
-  suburb: string;
-  city: string;
+  location: string;
   priority: Priority;
-  contactNumber: string;
   status: RequestStatus;
+  lifecycleGroup: "OPEN" | "RESOLVED" | "CLOSED";
+  overdue: boolean;
+  version: number;
   createdAt: string;
   updatedAt: string;
+  dueAt: string;
+  assigneeName: string | null;
   history: StatusEvent[];
+  actions: ApiAction[];
+  messages: ApiMessage[];
+  canGiveFeedback: boolean;
   feedbackRating?: number;
   feedbackComment?: string;
 };
 
 export type CivicUser = {
+  userId: number;
   fullName: string;
   email: string;
   phone: string;
   municipality: string;
-  password: string;
+  role: ApiUser["role"];
 };
 
 export type AppNotification = {
   id: string;
-  userEmail: string;
   title: string;
   body: string;
   at: string;
@@ -107,189 +159,201 @@ export type AppNotification = {
   requestId?: string;
 };
 
-const USERS_KEY = "civic.users";
-const SESSION_KEY = "civic.session";
-const REQUESTS_KEY = "civic.requests";
-const NOTIFICATIONS_KEY = "civic.notifications";
-
-const isBrowser = () => typeof window !== "undefined";
-
-function read<T>(key: string, fallback: T): T {
-  if (!isBrowser()) return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+/** Tell every hook to re-fetch (same event name the localStorage prototype used). */
+function changed() {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("civic:changed"));
 }
 
-function write(key: string, value: unknown) {
-  if (!isBrowser()) return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-  window.dispatchEvent(new CustomEvent("civic:changed"));
+function toUser(u: ApiUser): CivicUser {
+  return {
+    userId: u.userId,
+    fullName: u.fullName,
+    email: u.email,
+    phone: u.phone ?? "",
+    municipality: u.municipality ?? "",
+    role: u.role,
+  };
 }
 
-export const uid = () => Math.random().toString(36).slice(2, 10);
-
-export function makeReference(category: CategoryId) {
-  const prefix = category.slice(0, 3).toUpperCase();
-  return `CC-${prefix}-${Math.floor(100000 + Math.random() * 899999)}`;
+export function toRequest(d: ApiDetail): ServiceRequest {
+  const r = d.request;
+  return {
+    id: String(r.id),
+    numericId: r.id,
+    reference: r.reference,
+    categoryName: r.categoryName,
+    title: r.title,
+    description: r.description,
+    location: r.location ?? "",
+    priority: PRIORITY_LABEL[r.priority],
+    status: r.statusLabel as RequestStatus,
+    lifecycleGroup: r.lifecycleGroup,
+    overdue: r.overdue,
+    version: r.version,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    dueAt: r.dueAt,
+    assigneeName: r.assigneeName,
+    history: d.history.map((h) => ({
+      status: h.toStatusLabel as RequestStatus,
+      note: h.note ?? "",
+      at: h.changedAt,
+      by: h.changedBy,
+    })),
+    actions: d.actions,
+    messages: d.messages,
+    canGiveFeedback: d.canGiveFeedback,
+    feedbackRating: d.feedback?.rating,
+    feedbackComment: d.feedback?.comment ?? undefined,
+  };
 }
 
 /* ---------- Users & session ---------- */
 
-export const getUsers = () => read<CivicUser[]>(USERS_KEY, []);
+export type RegistrationInput = {
+  fullName: string;
+  email: string;
+  phone: string;
+  municipality: string;
+  password: string;
+  confirmPassword: string;
+};
 
-export function registerUser(user: CivicUser) {
-  const users = getUsers();
-  if (users.some((u) => u.email.toLowerCase() === user.email.toLowerCase())) {
-    throw new Error("An account with this email already exists.");
-  }
-  write(USERS_KEY, [...users, user]);
-  write(SESSION_KEY, user.email.toLowerCase());
+export async function registerUser(input: RegistrationInput) {
+  const user = toUser(await api.post<ApiUser>("/auth/register", input));
+  changed();
   return user;
 }
 
-export function loginUser(email: string, password: string) {
-  const user = getUsers().find((u) => u.email.toLowerCase() === email.toLowerCase());
-  if (!user || user.password !== password) {
-    throw new Error("Incorrect email or password.");
-  }
-  write(SESSION_KEY, user.email.toLowerCase());
+export async function loginUser(email: string, password: string) {
+  const user = toUser(await api.post<ApiUser>("/auth/login", { email, password }));
+  changed();
   return user;
 }
 
-export function logout() {
-  if (!isBrowser()) return;
-  window.localStorage.removeItem(SESSION_KEY);
-  window.dispatchEvent(new CustomEvent("civic:changed"));
+export async function logout() {
+  await api.post<void>("/auth/logout");
+  changed();
 }
 
-export function currentUser(): CivicUser | null {
-  const email = read<string | null>(SESSION_KEY, null);
-  if (!email) return null;
-  return getUsers().find((u) => u.email.toLowerCase() === email) ?? null;
+/** The signed-in user, or null when not signed in. */
+export async function fetchCurrentUser(): Promise<CivicUser | null> {
+  try {
+    return toUser(await api.get<ApiUser>("/auth/me"));
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) return null;
+    throw e;
+  }
 }
+
+/* ---------- Categories ---------- */
+
+export const fetchCategories = () => api.get<ApiCategory[]>("/categories");
 
 /* ---------- Requests ---------- */
 
-export const getAllRequests = () => read<ServiceRequest[]>(REQUESTS_KEY, []);
+export type NewRequestInput = {
+  categoryId: number;
+  title: string;
+  description: string;
+  address: string;
+  suburb: string;
+  city: string;
+  priority: Priority;
+  contactNumber: string;
+};
 
-export const getUserRequests = (email: string) =>
-  getAllRequests()
-    .filter((r) => r.userEmail.toLowerCase() === email.toLowerCase())
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
-export type NewRequestInput = Omit<
-  ServiceRequest,
-  "id" | "reference" | "status" | "createdAt" | "updatedAt" | "history"
->;
-
-export function createRequest(input: NewRequestInput) {
-  const now = new Date().toISOString();
-  const request: ServiceRequest = {
-    ...input,
-    id: uid(),
-    reference: makeReference(input.category),
-    status: "Submitted",
-    createdAt: now,
-    updatedAt: now,
-    history: [{ status: "Submitted", note: "Request logged and queued for assignment.", at: now }],
-  };
-  write(REQUESTS_KEY, [request, ...getAllRequests()]);
-  pushNotification({
-    userEmail: request.userEmail,
-    title: `Request ${request.reference} received`,
-    body: `Your ${categoryById(request.category)?.name} request is logged. Target resolution: ${categoryById(request.category)?.sla}.`,
-    requestId: request.id,
+export async function createRequest(input: NewRequestInput) {
+  const detail = await api.post<ApiDetail>("/requests", {
+    categoryId: input.categoryId,
+    title: input.title,
+    description: input.description,
+    address: input.address,
+    suburb: input.suburb,
+    city: input.city,
+    priority: PRIORITY_TO_API[input.priority],
+    contactPhone: input.contactNumber,
   });
-  return request;
+  changed();
+  return toRequest(detail);
 }
 
-export function advanceRequest(id: string) {
-  const requests = getAllRequests();
-  const request = requests.find((r) => r.id === id);
-  if (!request) return;
-  const next: Record<RequestStatus, RequestStatus> = {
-    Submitted: "In Progress",
-    "In Progress": "Resolved",
-    Resolved: "Resolved",
-    Rejected: "Rejected",
-  };
-  const status = next[request.status];
-  if (status === request.status) return;
-  const at = new Date().toISOString();
-  request.status = status;
-  request.updatedAt = at;
-  request.history = [
-    ...request.history,
-    {
-      status,
-      note:
-        status === "In Progress"
-          ? "A municipal field team has been assigned to your request."
-          : "Work completed and verified. Please rate the service.",
-      at,
-    },
-  ];
-  write(REQUESTS_KEY, requests);
-  pushNotification({
-    userEmail: request.userEmail,
-    title: `${request.reference} is now ${status}`,
-    body:
-      status === "In Progress"
-        ? "A team has been dispatched to your reported location."
-        : "Your issue has been resolved. Tell us how we did.",
-    requestId: request.id,
-  });
+/** A resident's own requests, each with its timeline (residents have few requests). */
+export async function fetchMyRequests(): Promise<ServiceRequest[]> {
+  const list = await api.get<ApiSummary[]>("/requests?scope=mine");
+  const details = await Promise.all(list.map((r) => fetchRequest(r.id)));
+  return details;
 }
 
-export function saveFeedback(id: string, rating: number, comment: string) {
-  const requests = getAllRequests();
-  const request = requests.find((r) => r.id === id);
-  if (!request) return;
-  request.feedbackRating = rating;
-  request.feedbackComment = comment;
-  request.updatedAt = new Date().toISOString();
-  write(REQUESTS_KEY, requests);
+export async function fetchRequest(id: number) {
+  return toRequest(await api.get<ApiDetail>(`/requests/${id}`));
+}
+
+/** Work queue: staff see their assignments; coordinators and managers see all open requests. */
+export const fetchQueue = (status?: string) =>
+  api.get<ApiSummary[]>(`/requests?scope=queue${status ? `&status=${encodeURIComponent(status)}` : ""}`);
+
+export const fetchStaff = () => api.get<ApiStaffMember[]>("/staff");
+
+export type ChangeStatusInput = {
+  target: string;
+  expectedVersion: number;
+  assigneeId?: number;
+  note?: string;
+  resolutionNotes?: string;
+};
+
+export async function changeStatus(id: number, input: ChangeStatusInput) {
+  const result = await api.post<ApiChangeResult>(`/requests/${id}/status`, input);
+  changed();
+  return { request: toRequest(result.request), warnings: result.warnings };
+}
+
+export async function saveFeedback(id: number, rating: number, comment: string) {
+  const detail = await api.post<ApiDetail>(`/requests/${id}/feedback`, { rating, comment });
+  changed();
+  return toRequest(detail);
 }
 
 /* ---------- Notifications ---------- */
 
-export const getNotifications = (email: string) =>
-  read<AppNotification[]>(NOTIFICATIONS_KEY, [])
-    .filter((n) => n.userEmail.toLowerCase() === email.toLowerCase())
-    .sort((a, b) => b.at.localeCompare(a.at));
-
-export function pushNotification(input: Omit<AppNotification, "id" | "at" | "read">) {
-  const all = read<AppNotification[]>(NOTIFICATIONS_KEY, []);
-  write(NOTIFICATIONS_KEY, [
-    { ...input, id: uid(), at: new Date().toISOString(), read: false },
-    ...all,
-  ]);
+export async function fetchNotifications(): Promise<AppNotification[]> {
+  const inbox = await api.get<{ items: ApiNotification[]; unread: number }>("/notifications");
+  return inbox.items.map((n) => ({
+    id: String(n.notificationId),
+    title: n.title,
+    body: n.body,
+    at: n.createdAt,
+    read: n.read,
+    requestId: n.requestId == null ? undefined : String(n.requestId),
+  }));
 }
 
-export function markNotificationsRead(email: string) {
-  const all = read<AppNotification[]>(NOTIFICATIONS_KEY, []).map((n) =>
-    n.userEmail.toLowerCase() === email.toLowerCase() ? { ...n, read: true } : n,
-  );
-  write(NOTIFICATIONS_KEY, all);
+export async function markNotificationsRead() {
+  await api.post<{ updated: number }>("/notifications/read");
+  changed();
 }
 
 /* ---------- Formatting helpers ---------- */
 
 export const statusTone: Record<RequestStatus, string> = {
   Submitted: "bg-secondary text-secondary-foreground",
+  Assigned: "bg-primary/15 text-primary",
   "In Progress": "bg-warning/25 text-warning-foreground",
+  Reopened: "bg-warning/25 text-warning-foreground",
   Resolved: "bg-success/20 text-success",
+  Closed: "bg-success/20 text-success",
   Rejected: "bg-destructive/15 text-destructive",
 };
 
+/** Three-segment progress bar on the dashboard. */
 export const statusStep: Record<RequestStatus, number> = {
   Submitted: 1,
+  Assigned: 1,
   "In Progress": 2,
+  Reopened: 2,
   Resolved: 3,
+  Closed: 3,
   Rejected: 3,
 };
 
@@ -301,4 +365,9 @@ export function formatDate(iso: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** Turns an unknown error into a short message for a toast. */
+export function errorMessage(e: unknown) {
+  return e instanceof Error ? e.message : "Something went wrong.";
 }

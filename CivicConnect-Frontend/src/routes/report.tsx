@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CATEGORIES, createRequest, type CategoryId, type Priority } from "@/lib/civic";
-import { useAuth } from "@/lib/use-civic";
+import { ApiError, createRequest, formatSla, type Priority } from "@/lib/civic";
+import { useAuth, useCategories } from "@/lib/use-civic";
 
 export const Route = createFileRoute("/report")({
   head: () => ({
@@ -36,7 +36,9 @@ const priorities: Priority[] = ["Low", "Medium", "High", "Emergency"];
 function ReportPage() {
   const { user, hydrated } = useAuth();
   const navigate = useNavigate();
-  const [category, setCategory] = useState<CategoryId | "">("");
+  const [category, setCategory] = useState<number | "">("");
+  const [busy, setBusy] = useState(false);
+  const { categories, error: categoryError } = useCategories();
   const [priority, setPriority] = useState<Priority>("Medium");
   const [description, setDescription] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -47,9 +49,9 @@ function ReportPage() {
 
   if (!user) return null;
 
-  const selected = CATEGORIES.find((c) => c.id === category);
+  const selected = categories.find((c) => c.categoryId === category);
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!user) return;
     const form = new FormData(e.currentTarget);
@@ -73,22 +75,28 @@ function ReportPage() {
       return;
     }
 
-    const request = createRequest({
-      userEmail: user.email,
-      category: category as CategoryId,
-      title: v("title"),
-      description: description.trim(),
-      address: v("address"),
-      suburb: v("suburb"),
-      city: v("city"),
-      priority,
-      contactNumber: v("contactNumber"),
-    });
-
-    toast.success(`Request ${request.reference} submitted`, {
-      description: "You can track its status on your dashboard.",
-    });
-    navigate({ to: "/dashboard" });
+    setBusy(true);
+    try {
+      const request = await createRequest({
+        categoryId: category as number,
+        title: v("title"),
+        description: description.trim(),
+        address: v("address"),
+        suburb: v("suburb"),
+        city: v("city"),
+        priority,
+        contactNumber: v("contactNumber"),
+      });
+      toast.success(`Request ${request.reference} submitted`, {
+        description: "You can track its status on your dashboard.",
+      });
+      navigate({ to: "/dashboard" });
+    } catch (err) {
+      if (err instanceof ApiError && Object.keys(err.fieldErrors).length > 0) setErrors(err.fieldErrors);
+      toast.error(err instanceof Error ? err.message : "Could not submit the request.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const err = (n: string) =>
@@ -107,29 +115,32 @@ function ReportPage() {
           <section className="animate-rise rounded-3xl border border-border bg-card p-6 shadow-soft">
             <h2 className="text-lg font-semibold">1. Category</h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <button
-                  key={c.id}
+                  key={c.categoryId}
                   type="button"
-                  onClick={() => setCategory(c.id)}
+                  onClick={() => setCategory(c.categoryId)}
                   className={`hover-lift rounded-2xl border p-4 text-left transition ${
-                    category === c.id
+                    category === c.categoryId
                       ? "border-primary bg-primary/10 shadow-glow"
                       : "border-border bg-background"
                   }`}
                 >
                   <span className="flex items-center justify-between font-semibold">
                     {c.name}
-                    {category === c.id && <CheckCircle2 className="size-4 text-primary" />}
+                    {category === c.categoryId && <CheckCircle2 className="size-4 text-primary" />}
                   </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">{c.blurb}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{c.description}</span>
                 </button>
               ))}
             </div>
             {err("category")}
+            {categoryError && (
+              <p className="mt-2 text-sm text-destructive">Could not load categories: {categoryError}</p>
+            )}
             {selected && (
               <p className="animate-rise mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-secondary-foreground">
-                Common issues: {selected.examples.join(" • ")} — target resolution {selected.sla}.
+                Handled by {selected.departmentName} — target resolution {formatSla(selected.slaHours)}.
               </p>
             )}
           </section>
@@ -211,8 +222,13 @@ function ReportPage() {
             </div>
           </section>
 
-          <Button type="submit" size="lg" className="w-full rounded-full shadow-glow sm:w-auto">
-            Submit request
+          <Button
+            type="submit"
+            size="lg"
+            disabled={busy}
+            className="w-full rounded-full shadow-glow sm:w-auto"
+          >
+            {busy ? "Submitting…" : "Submit request"}
           </Button>
         </form>
       </main>

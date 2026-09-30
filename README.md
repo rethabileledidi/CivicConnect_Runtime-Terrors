@@ -1,5 +1,10 @@
 # CivicConnect: Database & Management Reporting Module (Person 3)
 
+> **Full system (M2):** React 19 frontend (`CivicConnect-Frontend/`, Person 1) → Java REST API
+> (`com.civicconnect.api`, `service`, `lifecycle`, `auth`, `notification`, Person 2) → this data and
+> reporting module and PostgreSQL (Person 3). How to run all three together: [`RUNNING.md`](RUNNING.md).
+> API contract: [`docs/backend-api.md`](docs/backend-api.md).
+
 This module covers the data and reporting work for CivicConnect:
 
 | Task (Person 3) | Where it lives |

@@ -1,0 +1,62 @@
+# CivicConnect CI - runs on every pull request and on pushes to main.
+# Required status checks (set in Settings -> Branches -> main protection): "backend" and "frontend".
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    services:
+      # Throw-away PostgreSQL for Rethabile's database tests (schema is dropped and rebuilt).
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: civic_owner
+          POSTGRES_PASSWORD: ci_only_throwaway   # disposable CI container, not a real credential
+          POSTGRES_DB: civicconnect_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U civic_owner" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CIVIC_TEST_DB_URL: jdbc:postgresql://localhost:5432/civicconnect_test
+      CIVIC_TEST_DB_USER: civic_owner
+      CIVIC_TEST_DB_PASSWORD: ci_only_throwaway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build and run all tests (unit + database)
+        run: mvn -B -ntp verify
+      - name: Check the V5/V6 migrations apply on top of V1-V4
+        env:
+          PGPASSWORD: ci_only_throwaway
+        run: |
+          psql -h localhost -U civic_owner -d civicconnect_test -v ON_ERROR_STOP=1 -q -c "DROP SCHEMA IF EXISTS civic CASCADE; CREATE SCHEMA civic;"
+          for f in V1__schema.sql V2__reporting_views.sql V3__reference_data.sql V4__sample_data_dev_only.sql \
+                   V5__accounts_notifications_feedback.sql V6__demo_logins_dev_only.sql; do
+            psql -h localhost -U civic_owner -d civicconnect_test -v ON_ERROR_STOP=1 -q -f "database/$f"
+          done
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CivicConnect-Frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Type-check and build
+        run: bun run build
