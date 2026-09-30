@@ -4,3 +4,24 @@ target/
 nbproject/private/
 .env
 *.local.properties
+
+# Frontend (CivicConnect-Frontend)
+node_modules/
+dist/
+.output/
+.nitro/
+.tanstack/
+.vinxi/
+*.local
+
+# Visual Studio / .NET leftovers (the WinForms prototype was removed in M2)
+bin/
+obj/
+.vs/
+*.suo
+*.user
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
