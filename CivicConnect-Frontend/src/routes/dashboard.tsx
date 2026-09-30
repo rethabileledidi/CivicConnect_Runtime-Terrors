@@ -1,18 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, Inbox, Plus, Star } from "lucide-react";
+import { AlertTriangle, ChevronDown, Inbox, MessageSquare, Plus, Star } from "lucide-react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  advanceRequest,
-  categoryById,
+  changeStatus,
+  errorMessage,
   formatDate,
   saveFeedback,
   statusStep,
   statusTone,
-  type RequestStatus,
   type ServiceRequest,
 } from "@/lib/civic";
 import { useAuth, useRequests } from "@/lib/use-civic";
@@ -38,7 +37,8 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-const filters = ["All", "Submitted", "In Progress", "Resolved"] as const;
+const filters = ["All", "Open", "Resolved", "Closed"] as const;
+const filterGroup = { Open: "OPEN", Resolved: "RESOLVED", Closed: "CLOSED" } as const;
 
 function Dashboard() {
   const { user, hydrated } = useAuth();
@@ -54,15 +54,17 @@ function Dashboard() {
   const counts = useMemo(
     () => ({
       total: requests.length,
-      open: requests.filter((r) => r.status !== "Resolved").length,
-      resolved: requests.filter((r) => r.status === "Resolved").length,
+      open: requests.filter((r) => r.lifecycleGroup === "OPEN").length,
+      resolved: requests.filter((r) => r.lifecycleGroup !== "OPEN").length,
     }),
     [requests],
   );
 
   if (!user) return null;
 
-  const visible = requests.filter((r) => filter === "All" || r.status === filter);
+  const visible = requests.filter(
+    (r) => filter === "All" || r.lifecycleGroup === filterGroup[filter],
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -86,7 +88,7 @@ function Dashboard() {
           {[
             { label: "Total logged", value: counts.total },
             { label: "Still open", value: counts.open },
-            { label: "Resolved", value: counts.resolved },
+            { label: "Resolved or closed", value: counts.resolved },
           ].map((s, i) => (
             <div
               key={s.label}
@@ -157,7 +159,22 @@ function RequestCard({
 }) {
   const [rating, setRating] = useState(request.feedbackRating ?? 0);
   const [comment, setComment] = useState(request.feedbackComment ?? "");
-  const step = statusStep[request.status as RequestStatus];
+  const [reopenNote, setReopenNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const step = statusStep[request.status];
+
+  async function act(target: string, note?: string) {
+    setBusy(true);
+    try {
+      await changeStatus(request.numericId, { target, expectedVersion: request.version, note });
+      toast.success(target === "CLOSED" ? "Thanks — request closed." : "Request reopened. The team has been told.");
+      setReopenNote("");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <article
@@ -176,11 +193,15 @@ function RequestCard({
             <span className="rounded-full bg-accent/15 px-3 py-1 text-xs font-semibold text-accent">
               {request.priority}
             </span>
+            {request.overdue && (
+              <span className="flex items-center gap-1 rounded-full bg-destructive/15 px-3 py-1 text-xs font-semibold text-destructive">
+                <AlertTriangle className="size-3" /> Overdue
+              </span>
+            )}
           </div>
           <h3 className="mt-2 text-lg font-semibold">{request.title}</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {categoryById(request.category)?.name} • {request.suburb}, {request.city} •{" "}
-            {formatDate(request.createdAt)}
+            {request.categoryName} • {request.location} • {formatDate(request.createdAt)}
           </p>
 
           <div className="mt-4 flex gap-1.5">
@@ -203,7 +224,8 @@ function RequestCard({
         <div className="animate-rise border-t border-border px-6 py-6">
           <p className="text-sm">{request.description}</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            {request.address}, {request.suburb} • Contact {request.contactNumber}
+            {request.location} • Target date {formatDate(request.dueAt)}
+            {request.assigneeName ? ` • Assigned to ${request.assigneeName}` : ""}
           </p>
 
           <h4 className="mt-6 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -215,25 +237,58 @@ function RequestCard({
                 <span className="gradient-primary absolute -left-[1.6rem] top-1 size-3 rounded-full" />
                 <p className="text-sm font-semibold">{h.status}</p>
                 <p className="text-sm text-muted-foreground">{h.note}</p>
-                <p className="text-xs text-muted-foreground/70">{formatDate(h.at)}</p>
+                <p className="text-xs text-muted-foreground/70">
+                  {formatDate(h.at)} • {h.by}
+                </p>
               </li>
             ))}
           </ol>
-
-          {request.status !== "Resolved" && (
-            <Button
-              variant="secondary"
-              className="mt-6 rounded-full"
-              onClick={() => {
-                advanceRequest(request.id);
-                toast.info("Status updated by the municipal team.");
-              }}
-            >
-              Simulate next status update
-            </Button>
+          {request.actions.length > 0 && (
+            <div className="mt-6 rounded-2xl border border-border p-5">
+              <h4 className="text-sm font-semibold">Is the problem fixed?</h4>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Confirm to close the request, or reopen it if the problem has come back.
+              </p>
+              {request.actions.some((a) => a.target === "REOPENED") && (
+                <Textarea
+                  className="mt-3 bg-card"
+                  rows={2}
+                  value={reopenNote}
+                  onChange={(e) => setReopenNote(e.target.value)}
+                  placeholder="If reopening: what is still wrong?"
+                />
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {request.actions.map((a) => (
+                  <Button
+                    key={a.target}
+                    variant={a.target === "CLOSED" ? "default" : "secondary"}
+                    className="rounded-full"
+                    disabled={busy}
+                    onClick={() => {
+                      if (a.needsNote && !reopenNote.trim()) {
+                        toast.error("Tell us what is still wrong before reopening.");
+                        return;
+                      }
+                      void act(a.target, a.needsNote ? reopenNote.trim() : undefined);
+                    }}
+                  >
+                    {a.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
           )}
 
-          {request.status === "Resolved" && (
+          {request.feedbackRating !== undefined && (
+            <p className="mt-6 flex items-center gap-1 text-sm text-muted-foreground">
+              You rated this repair {request.feedbackRating}
+              <Star className="size-4 fill-accent text-accent" />
+              {request.feedbackComment ? ` — “${request.feedbackComment}”` : ""}
+            </p>
+          )}
+
+          {request.canGiveFeedback && (
             <div className="mt-6 rounded-2xl bg-secondary/60 p-5">
               <h4 className="text-sm font-semibold">Rate this repair</h4>
               <div className="mt-2 flex gap-1">
@@ -264,12 +319,31 @@ function RequestCard({
                     toast.error("Pick a star rating first.");
                     return;
                   }
-                  saveFeedback(request.id, rating, comment);
-                  toast.success("Thanks for your feedback!");
+                  saveFeedback(request.numericId, rating, comment)
+                    .then(() => toast.success("Thanks for your feedback!"))
+                    .catch((e: unknown) => toast.error(errorMessage(e)));
                 }}
               >
                 Submit feedback
               </Button>
+            </div>
+          )}
+
+          {request.messages.length > 0 && (
+            <div className="mt-6">
+              <h4 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <MessageSquare className="size-4" /> SMS & WhatsApp updates
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px]">SIMULATED</span>
+              </h4>
+              <ul className="mt-3 space-y-2">
+                {request.messages.map((m, i) => (
+                  <li key={i} className="rounded-xl bg-secondary/50 px-4 py-2 text-xs">
+                    <span className="font-semibold">{m.channel === "SMS" ? "SMS" : "WhatsApp"}</span> to{" "}
+                    {m.recipient} • {m.status === "SENT" ? "Sent (simulated)" : m.status.toLowerCase()}
+                    <p className="mt-1 text-muted-foreground">{m.body}</p>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
