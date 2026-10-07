@@ -146,7 +146,9 @@ CREATE INDEX ix_history_changed_at   ON request_status_history (changed_at);
 
 -- 5.1 Default due_at from the category SLA; keep updated_at current.
 CREATE FUNCTION trg_request_defaults() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SET search_path = civic
+AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
         IF NEW.due_at IS NULL THEN
@@ -168,7 +170,9 @@ CREATE TRIGGER request_defaults
 
 -- 5.2 History is immutable: no UPDATE or DELETE, even by accident or by an admin tool.
 CREATE FUNCTION trg_history_append_only() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SET search_path = civic
+AS $$
 BEGIN
     RAISE EXCEPTION 'request_status_history is append-only (% not allowed)', TG_OP
         USING ERRCODE = 'integrity_constraint_violation';
@@ -184,7 +188,9 @@ CREATE TRIGGER history_append_only
 --     matching history row, the whole transaction is rolled back. This makes it
 --     impossible for reports to count a status that the audit trail cannot explain.
 CREATE FUNCTION trg_request_status_has_history() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SET search_path = civic
+AS $$
 DECLARE
     latest_status  VARCHAR(20);
     current_status VARCHAR(20);
