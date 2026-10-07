@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   CIVIC_TEST_DB_URL=jdbc:postgresql://localhost:5432/civicconnect_test
  *   CIVIC_TEST_DB_USER=civic_owner   CIVIC_TEST_DB_PASSWORD=...
  * </pre>
- * WARNING: the "civic" schema in that database is dropped and rebuilt from database/V1..V4.
+ * WARNING: the "civic" schema in that database is dropped and rebuilt from database/V1..V6.
  * Never point it at a real database.
  */
 public final class TestDatabase {
@@ -32,9 +32,11 @@ public final class TestDatabase {
         }
         try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
             st.execute("DROP SCHEMA IF EXISTS civic CASCADE; CREATE SCHEMA civic;");
-            for (String file : new String[]{"V1__schema.sql", "V2__reporting_views.sql",
-                    "V3__reference_data.sql", "V4__sample_data_dev_only.sql"}) {
-                st.execute(read(file));
+           for (String file : new String[]{"V1__schema.sql", "V2__reporting_views.sql",
+        "V3__reference_data.sql", "V4__sample_data_dev_only.sql",
+        "V5__accounts_notifications_feedback.sql", "V6__demo_logins_dev_only.sql"}) {
+    st.execute(read(file));
+
             }
         }
         return dataSource;
