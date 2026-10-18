@@ -34,7 +34,8 @@ public final class TestDatabase {
             st.execute("DROP SCHEMA IF EXISTS civic CASCADE; CREATE SCHEMA civic;");
            for (String file : new String[]{"V1__schema.sql", "V2__reporting_views.sql",
         "V3__reference_data.sql", "V4__sample_data_dev_only.sql",
-        "V5__accounts_notifications_feedback.sql", "V6__demo_logins_dev_only.sql"}) {
+        "V5__accounts_notifications_feedback.sql", "V6__demo_logins_dev_only.sql",
+        "V7__pin_trigger_search_path.sql"}) {
     st.execute(read(file));
 
             }
