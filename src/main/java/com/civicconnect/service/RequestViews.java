@@ -60,9 +60,17 @@ public final class RequestViews {
         }
     }
 
+    /** A staff comment (FR-09): who wrote it, their role and when, as recorded by the database. */
+    public record CommentItem(String author, String authorRole, String body, Instant createdAt) {
+        public static CommentItem of(RequestQueries.Comment c) {
+            return new CommentItem(c.authorName(), c.authorRole(), c.body(), c.createdAt());
+        }
+    }
+
+    /** {@code comments} is empty and {@code canComment} false for residents (internal notes). */
     public record Detail(Summary request, List<HistoryItem> history, List<Action> actions,
                          RequestQueries.Feedback feedback, boolean canGiveFeedback,
-                         List<SimulatedMessage> messages) { }
+                         List<SimulatedMessage> messages, List<CommentItem> comments, boolean canComment) { }
 
     public record ChangeResult(Detail request, List<String> warnings) { }
 }

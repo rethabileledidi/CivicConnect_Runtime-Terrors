@@ -5,6 +5,7 @@ import com.civicconnect.data.model.ServiceRequestRecord;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Backend-specific reads and small writes that Rethabile's reporting module does not cover:
@@ -19,10 +20,14 @@ public interface RequestQueries {
     /**
      * Open work queue (Submitted, Assigned, In Progress, Reopened), overdue first, then oldest first.
      *
-     * @param assigneeId only this assignee's requests, or null for all
-     * @param statusCode optional status filter, or null
+     * @param assigneeId        only this assignee's requests, or null for all
+     * @param statusCode        optional status filter, or null
+     * @param includeRestricted false to leave out requests in restricted categories (FR-12)
      */
-    List<ServiceRequestRecord> listOpenQueue(Long assigneeId, String statusCode, int limit);
+    List<ServiceRequestRecord> listOpenQueue(Long assigneeId, String statusCode, boolean includeRestricted, int limit);
+
+    /** Ids of categories whose requests only authorised roles may see (FR-12, V7). */
+    Set<Integer> restrictedCategoryIds();
 
     List<Category> listActiveCategories();
 
@@ -35,8 +40,16 @@ public interface RequestQueries {
     /** @return false if feedback already exists for this request */
     boolean saveFeedback(long requestId, int rating, String comment, long submittedBy);
 
+    /** Staff comments on a request, oldest first (FR-09). */
+    List<Comment> findComments(long requestId);
+
+    /** Appends a comment; the database sets the timestamp and refuses later edits (V7). */
+    void addComment(long requestId, long authorId, String body);
+
     record Category(int categoryId, String code, String name, String description,
-                    String departmentName, int slaHours) { }
+                    String departmentName, int slaHours, boolean restricted) { }
+
+    record Comment(long commentId, String authorName, String authorRole, String body, Instant createdAt) { }
 
     record Feedback(int rating, String comment, Instant submittedAt) { }
 }

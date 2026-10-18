@@ -141,6 +141,7 @@ function ReportPage() {
             {selected && (
               <p className="animate-rise mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm text-secondary-foreground">
                 Handled by {selected.departmentName} — target resolution {formatSla(selected.slaHours)}.
+                {selected.restricted && " Reports in this category are confidential: only authorised staff can see them."}
               </p>
             )}
           </section>

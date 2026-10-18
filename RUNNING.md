@@ -24,6 +24,7 @@ psql -h localhost -U civic_owner -d civicconnect -f V3__reference_data.sql
 psql -h localhost -U civic_owner -d civicconnect -f V4__sample_data_dev_only.sql     # demo data
 psql -h localhost -U civic_owner -d civicconnect -f V5__accounts_notifications_feedback.sql
 psql -h localhost -U civic_owner -d civicconnect -f V6__demo_logins_dev_only.sql     # demo passwords
+psql -h localhost -U civic_owner -d civicconnect -f V7__comments_and_restricted_categories.sql
 ```
 
 Choose your own passwords. They are never stored in the repository.

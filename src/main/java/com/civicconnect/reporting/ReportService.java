@@ -61,6 +61,11 @@ public class ReportService {
         return rows.size();
     }
 
+    /** FR-12: used by the request-detail screen to refuse restricted requests to coordinators. */
+    public boolean isRestrictedCategory(int categoryId) {
+        return tx.readOnlySnapshot(c -> repository.isRestrictedCategory(c, categoryId));
+    }
+
     public FilterOptions filterOptions() {
         return tx.readOnlySnapshot(c -> new FilterOptions(
                 repository.statusOptions(c), repository.categoryOptions(c), repository.assigneeOptions(c)));

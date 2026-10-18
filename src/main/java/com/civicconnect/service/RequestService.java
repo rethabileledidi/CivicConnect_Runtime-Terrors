@@ -117,7 +117,8 @@ public final class RequestService {
             catch (IllegalArgumentException e) { throw new ApiException.Validation("status", "Unknown status."); }
         }
         Long assignee = actor.role() == UserRole.STAFF ? actor.userId() : null;
-        return queries.listOpenQueue(assignee, status, LIST_LIMIT).stream().map(RequestViews.Summary::of).toList();
+        return queries.listOpenQueue(assignee, status, AccessPolicy.queueIncludesRestricted(actor), LIST_LIMIT)
+                .stream().map(RequestViews.Summary::of).toList();
     }
 
     public RequestViews.Detail detail(AuthenticatedUser actor, long requestId) {
@@ -131,9 +132,26 @@ public final class RequestService {
                 && (status == RequestStatusCode.RESOLVED || status == RequestStatusCode.CLOSED);
         List<RequestViews.SimulatedMessage> messages = outbox.findForRequest(requestId).stream()
                 .map(RequestViews.SimulatedMessage::of).toList();
+        boolean canComment = AccessPolicy.canComment(actor, r);
+        List<RequestViews.CommentItem> comments = canComment
+                ? queries.findComments(requestId).stream().map(RequestViews.CommentItem::of).toList()
+                : List.of();
         return new RequestViews.Detail(RequestViews.Summary.of(r),
                 requests.findHistory(requestId).stream().map(RequestViews.HistoryItem::of).toList(),
-                actions, feedback, canGiveFeedback, messages);
+                actions, feedback, canGiveFeedback, messages, comments, canComment);
+    }
+
+    // ------------------------------------------------------------------ comments (FR-09)
+
+    /** Adds a timestamped, attributed staff comment that cannot be edited later (V7 trigger). */
+    public RequestViews.Detail addComment(AuthenticatedUser actor, long requestId, String body) {
+        ServiceRequestRecord r = loadVisible(actor, requestId);
+        if (!AccessPolicy.canComment(actor, r)) {
+            throw new ApiException.Forbidden("Only staff working on this request can add comments.");
+        }
+        new Validator().length("body", body, 1, 1000, "Comment").throwIfInvalid();
+        queries.addComment(requestId, actor.userId(), Validator.clean(body));
+        return detail(actor, requestId);
     }
 
     // ------------------------------------------------------------------ change status (FR-07..FR-10)
@@ -212,11 +230,16 @@ public final class RequestService {
 
     public record StaffMember(long userId, String fullName) { }
 
-    /** Not found and not allowed look the same to the caller (no reference-number probing). */
+    /**
+     * Not found and not allowed look the same to the caller (no reference-number probing). This is
+     * also how FR-12 denies a coordinator a restricted request: the attempt is refused, and the
+     * response does not confirm that the request exists.
+     */
     private ServiceRequestRecord loadVisible(AuthenticatedUser actor, long requestId) {
         requireSignedIn(actor);
         ServiceRequestRecord r = requests.findById(requestId).orElse(null);
-        if (r == null || !AccessPolicy.canView(actor, r)) throw new ApiException.NotFound("Request not found.");
+        boolean restricted = r != null && queries.restrictedCategoryIds().contains(r.categoryId());
+        if (r == null || !AccessPolicy.canView(actor, r, restricted)) throw new ApiException.NotFound("Request not found.");
         return r;
     }
 

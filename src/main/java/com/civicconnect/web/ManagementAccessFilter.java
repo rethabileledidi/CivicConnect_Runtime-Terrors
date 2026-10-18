@@ -26,6 +26,14 @@ public class ManagementAccessFilter extends HttpFilter {
     public static final String ROLE_ATTRIBUTE = "userRole";
     public static final String DEV_ROLE_PARAM = "civicconnect.devAutoLoginRole";
     static final Set<String> ALLOWED_ROLES = Set.of("MANAGER", "COORDINATOR", "ADMIN");
+    /** FR-12: roles that may also see restricted requests; must match AccessPolicy.canView (ADR-P2-04). */
+    static final Set<String> RESTRICTED_ROLES = Set.of("MANAGER", "ADMIN");
+
+    /** True if the role set on the request by this filter may see restricted requests. */
+    static boolean canSeeRestricted(HttpServletRequest req) {
+        Object role = req.getAttribute("currentRole");
+        return role != null && RESTRICTED_ROLES.contains(role.toString());
+    }
 
     @Override
     protected void doFilter(HttpServletRequest req, HttpServletResponse res, FilterChain chain)

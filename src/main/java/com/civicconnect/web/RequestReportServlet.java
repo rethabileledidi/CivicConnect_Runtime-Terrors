@@ -22,6 +22,7 @@ public class RequestReportServlet extends HttpServlet {
     protected void doGet(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         ReportService reports = (ReportService) getServletContext().getAttribute(AppContextListener.REPORT_SERVICE);
         RequestSearchCriteria criteria = SearchCriteriaParser.parse(req.getParameterMap());
+        criteria.setExcludeRestricted(!ManagementAccessFilter.canSeeRestricted(req));   // FR-12
 
         if ("csv".equalsIgnoreCase(req.getParameter("format"))) {
             String file = "civicconnect-" + criteria.getReportType().param() + "-requests-" + LocalDate.now() + ".csv";

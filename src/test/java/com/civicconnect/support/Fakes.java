@@ -120,8 +120,8 @@ public final class Fakes {
                 throw new StaleUpdateException("stale");
             }
             Long assignee = ch.assigneeId() != null ? ch.assigneeId() : r.assigneeId();
-            rows.put(r.requestId(), record(r.requestId(), r.referenceNo(), r.title(), ch.toStatus().name(),
-                    r.requesterId(), assignee, r.version() + 1, r.locationText()));
+            rows.put(r.requestId(), withCategory(record(r.requestId(), r.referenceNo(), r.title(), ch.toStatus().name(),
+                    r.requesterId(), assignee, r.version() + 1, r.locationText()), r.categoryId()));
             history.get(r.requestId()).add(entry(ch.fromStatus().name(), ch.toStatus().name(), ch.changedBy(), ch.note()));
             return r.version() + 1;
         }
@@ -130,10 +130,25 @@ public final class Fakes {
 
         /** Seeds a request directly in a given state (test set-up only). */
         public long seed(String status, long requesterId, Long assigneeId) {
+            return seed(status, requesterId, assigneeId, 3);
+        }
+
+        /** Seeds a request in a chosen category, e.g. a restricted one (FR-12 tests). */
+        public long seed(String status, long requesterId, Long assigneeId, int categoryId) {
             long id = nextId++;
-            rows.put(id, record(id, String.format("CC-%06d", id), "Seeded request", status, requesterId, assigneeId, 3));
+            ServiceRequestRecord r = record(id, String.format("CC-%06d", id), "Seeded request", status, requesterId,
+                    assigneeId, 3);
+            rows.put(id, withCategory(r, categoryId));
             history.put(id, new ArrayList<>(List.of(entry(null, status, requesterId, "seeded"))));
             return id;
+        }
+
+        private static ServiceRequestRecord withCategory(ServiceRequestRecord r, int categoryId) {
+            return new ServiceRequestRecord(r.requestId(), r.referenceNo(), r.title(), r.description(), r.priority(),
+                    r.locationText(), r.statusCode(), r.statusName(), r.lifecycleGroup(), categoryId, r.categoryName(),
+                    r.departmentName(), r.requesterId(), r.requesterName(), r.assigneeId(), r.assigneeName(),
+                    r.createdAt(), r.updatedAt(), r.dueAt(), r.resolvedAt(), r.closedAt(), r.version(), r.overdue(),
+                    r.overdueHours(), r.ageDays(), r.resolutionHours(), r.resolvedWithinSla());
         }
 
         public static ServiceRequestRecord record(long id, String ref, String title, String status,
@@ -167,6 +182,9 @@ public final class Fakes {
         private final Requests requests;
         public final Map<Long, String> phones = new LinkedHashMap<>();
         public final Map<Long, Feedback> feedback = new LinkedHashMap<>();
+        /** Category 9 plays the restricted "Safety or Security Concern" category from V7. */
+        public static final int RESTRICTED_CATEGORY = 9;
+        public final Map<Long, List<Comment>> comments = new LinkedHashMap<>();
 
         public Queries(Requests requests) { this.requests = requests; }
 
@@ -174,16 +192,29 @@ public final class Fakes {
             return requests.rows.values().stream().filter(r -> r.requesterId() == requesterId).limit(limit).toList();
         }
 
-        @Override public List<ServiceRequestRecord> listOpenQueue(Long assigneeId, String status, int limit) {
+        @Override public List<ServiceRequestRecord> listOpenQueue(Long assigneeId, String status,
+                                                                  boolean includeRestricted, int limit) {
             return requests.rows.values().stream()
                     .filter(r -> r.lifecycleGroup().equals("OPEN"))
+                    .filter(r -> includeRestricted || !restrictedCategoryIds().contains(r.categoryId()))
                     .filter(r -> assigneeId == null || assigneeId.equals(r.assigneeId()))
                     .filter(r -> status == null || status.equals(r.statusCode()))
                     .limit(limit).toList();
         }
 
         @Override public List<Category> listActiveCategories() {
-            return List.of(new Category(3, "WATER_LEAK", "Water Leak / Burst Pipe", "Leaks", "Water and Sanitation", 48));
+            return List.of(new Category(3, "WATER_LEAK", "Water Leak / Burst Pipe", "Leaks", "Water and Sanitation", 48, false),
+                    new Category(RESTRICTED_CATEGORY, "SAFETY", "Safety or Security Concern", "Security threats",
+                            "Community Safety", 24, true));
+        }
+
+        @Override public java.util.Set<Integer> restrictedCategoryIds() { return java.util.Set.of(RESTRICTED_CATEGORY); }
+
+        @Override public List<Comment> findComments(long id) { return comments.getOrDefault(id, List.of()); }
+
+        @Override public void addComment(long id, long authorId, String body) {
+            List<Comment> list = comments.computeIfAbsent(id, k -> new ArrayList<>());
+            list.add(new Comment(list.size() + 1, "User " + authorId, "ROLE", body, NOW));
         }
 
         @Override public Optional<String> findContactPhone(long id) { return Optional.ofNullable(phones.get(id)); }

@@ -2,6 +2,7 @@ package com.civicconnect.web;
 
 import com.civicconnect.data.ServiceRequestRepository;
 import com.civicconnect.data.model.ServiceRequestRecord;
+import com.civicconnect.reporting.ReportService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -26,6 +27,10 @@ public class RequestDetailServlet extends HttpServlet {
             found = repo.findByReference(ref);
         } else if (id != null && id.matches("\\d{1,12}")) {
             found = repo.findById(Long.parseLong(id));
+        }
+        if (found.isPresent() && !ManagementAccessFilter.canSeeRestricted(req)) {
+            ReportService reports = (ReportService) getServletContext().getAttribute(AppContextListener.REPORT_SERVICE);
+            if (reports.isRestrictedCategory(found.get().categoryId())) found = Optional.empty();   // FR-12: 404
         }
         if (found.isEmpty()) {
             res.sendError(HttpServletResponse.SC_NOT_FOUND, "Service request not found");
