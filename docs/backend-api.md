@@ -30,11 +30,12 @@ dev server forwards it (see `CivicConnect-Frontend/vite.config.ts`).
 | `GET /auth/me` | signed in | none | `200` user, or `401` |
 | `GET /categories` | anyone | none | active categories with `slaHours` |
 | `GET /requests?scope=mine` | signed in | none | my requests (summaries) |
-| `GET /requests?scope=queue&status=ASSIGNED` | STAFF, COORDINATOR, MANAGER, ADMIN | none | open work queue, overdue first. Staff see only their assignments |
+| `GET /requests?scope=queue&status=ASSIGNED` | STAFF, COORDINATOR, MANAGER, ADMIN | none | open work queue, overdue first. Staff see only their assignments; coordinators do not see restricted categories (FR-12) |
 | `POST /requests` | signed in | `title, description, categoryId, priority (LOW/MEDIUM/HIGH/URGENT), address, suburb, city, contactPhone?` | `201` detail |
-| `GET /requests/{id}` | owner, assignee, oversight | none | detail: `request, history[], actions[], feedback, canGiveFeedback, messages[]` |
+| `GET /requests/{id}` | owner, assignee, oversight (coordinators: not restricted categories) | none | detail: `request, history[], actions[], feedback, canGiveFeedback, messages[], comments[], canComment` |
 | `POST /requests/{id}/status` | depends on the move (below) | `target, expectedVersion, assigneeId?, note?, resolutionNotes?` | `{request: detail, warnings: []}` |
 | `POST /requests/{id}/feedback` | requester, once, when Resolved/Closed | `rating (1-5), comment?` | detail |
+| `POST /requests/{id}/comments` | assignee, COORDINATOR, MANAGER, ADMIN | `body` (1-1000 characters) | `201` detail. Comments are internal: residents never receive them |
 | `GET /staff` | COORDINATOR, MANAGER, ADMIN | none | active staff for "assign to" |
 | `GET /notifications` | signed in | none | `{items: [...], unread: n}` |
 | `POST /notifications/read` | signed in | none | `{updated: n}` |

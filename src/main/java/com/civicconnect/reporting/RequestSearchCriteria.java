@@ -20,6 +20,7 @@ public class RequestSearchCriteria {
     private boolean overdueOnly;
     private Long assigneeId;
     private boolean unassignedOnly;
+    private boolean excludeRestricted;                    // FR-12: set from the viewer's role, never from the URL
     private LocalDate createdFrom;
     private LocalDate createdTo;                          // inclusive
     private SortField sortField = SortField.CREATED;
@@ -57,6 +58,9 @@ public class RequestSearchCriteria {
 
     public boolean isUnassignedOnly() { return unassignedOnly; }
     public void setUnassignedOnly(boolean unassignedOnly) { this.unassignedOnly = unassignedOnly; }
+
+    public boolean isExcludeRestricted() { return excludeRestricted; }
+    public void setExcludeRestricted(boolean excludeRestricted) { this.excludeRestricted = excludeRestricted; }
 
     public LocalDate getCreatedFrom() { return createdFrom; }
     public void setCreatedFrom(LocalDate createdFrom) { this.createdFrom = createdFrom; }

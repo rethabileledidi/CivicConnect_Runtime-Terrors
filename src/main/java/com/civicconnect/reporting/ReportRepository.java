@@ -134,6 +134,17 @@ public class ReportRepository {
         return list;
     }
 
+    /** FR-12: true if the category is restricted (V7). */
+    public boolean isRestrictedCategory(Connection c, int categoryId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT is_restricted FROM civic.request_category WHERE category_id = ?")) {
+            ps.setInt(1, categoryId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getBoolean(1);
+            }
+        }
+    }
+
     public List<LookupOption> statusOptions(Connection c) throws SQLException {
         return options(c, "SELECT status_code, display_name FROM civic.request_status ORDER BY sort_order");
     }

@@ -12,6 +12,7 @@ import {
   type ApiAction,
   type ApiCategory,
   type ApiChangeResult,
+  type ApiComment,
   type ApiDetail,
   type ApiMessage,
   type ApiNotification,
@@ -21,7 +22,7 @@ import {
 } from "./api";
 
 export { ApiError };
-export type { ApiAction, ApiCategory, ApiDetail, ApiMessage, ApiStaffMember, ApiSummary };
+export type { ApiAction, ApiCategory, ApiComment, ApiDetail, ApiMessage, ApiStaffMember, ApiSummary };
 
 export type RequestStatus =
   | "Submitted"
@@ -139,6 +140,8 @@ export type ServiceRequest = {
   canGiveFeedback: boolean;
   feedbackRating?: number;
   feedbackComment?: string;
+  comments: ApiComment[];
+  canComment: boolean;
 };
 
 export type CivicUser = {
@@ -205,6 +208,8 @@ export function toRequest(d: ApiDetail): ServiceRequest {
     canGiveFeedback: d.canGiveFeedback,
     feedbackRating: d.feedback?.rating,
     feedbackComment: d.feedback?.comment ?? undefined,
+    comments: d.comments ?? [],
+    canComment: d.canComment ?? false,
   };
 }
 
@@ -311,6 +316,13 @@ export async function changeStatus(id: number, input: ChangeStatusInput) {
 
 export async function saveFeedback(id: number, rating: number, comment: string) {
   const detail = await api.post<ApiDetail>(`/requests/${id}/feedback`, { rating, comment });
+  changed();
+  return toRequest(detail);
+}
+
+/** FR-09: add an internal staff comment; the server stamps the author and time. */
+export async function addComment(id: number, body: string) {
+  const detail = await api.post<ApiDetail>(`/requests/${id}/comments`, { body });
   changed();
   return toRequest(detail);
 }

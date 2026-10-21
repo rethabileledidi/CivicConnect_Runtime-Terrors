@@ -45,7 +45,7 @@ jobs:
           psql -h localhost -U civic_owner -d civicconnect_test -v ON_ERROR_STOP=1 -q -c "DROP SCHEMA IF EXISTS civic CASCADE; CREATE SCHEMA civic;"
           for f in V1__schema.sql V2__reporting_views.sql V3__reference_data.sql V4__sample_data_dev_only.sql \
                    V5__accounts_notifications_feedback.sql V6__demo_logins_dev_only.sql \
-                   V7__pin_trigger_search_path.sql; do
+                   V7__comments_and_restricted_categories.sql; do
             psql -h localhost -U civic_owner -d civicconnect_test -v ON_ERROR_STOP=1 -q -f "database/$f"
           done
 

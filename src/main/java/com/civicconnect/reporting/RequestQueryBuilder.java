@@ -17,6 +17,10 @@ public final class RequestQueryBuilder {
     private static final Set<String> LIFECYCLE_GROUPS = Set.of("OPEN", "RESOLVED", "CLOSED");
     private static final Set<String> PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH", "URGENT");
 
+    /** FR-12: leaves out requests in restricted categories (V7). No user input reaches this SQL. */
+    static final String RESTRICTED_EXCLUSION =
+            "category_id NOT IN (SELECT category_id FROM civic.request_category WHERE is_restricted)";
+
     private RequestQueryBuilder() { }
 
     public static SqlQuery count(RequestSearchCriteria c) {
@@ -91,6 +95,9 @@ public final class RequestQueryBuilder {
             clauses.add("(reference_no ILIKE ? OR title ILIKE ? OR description ILIKE ?"
                     + " OR location_text ILIKE ? OR requester_name ILIKE ? OR assignee_name ILIKE ?)");
             for (int i = 0; i < 6; i++) params.add(like);
+        }
+        if (c.isExcludeRestricted()) {
+            clauses.add(RESTRICTED_EXCLUSION);
         }
         return clauses.isEmpty() ? "" : " WHERE " + String.join(" AND ", clauses);
     }

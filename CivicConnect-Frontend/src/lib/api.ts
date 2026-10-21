@@ -88,6 +88,8 @@ export type ApiCategory = {
   description: string | null;
   departmentName: string;
   slaHours: number;
+  /** FR-12: requests in this category are seen only by the requester, assignee, managers and admins. */
+  restricted: boolean;
 };
 
 export type ApiSummary = {
@@ -142,6 +144,14 @@ export type ApiMessage = {
   sentAt: string | null;
 };
 
+/** FR-09 staff comment; internal, so residents receive an empty list. */
+export type ApiComment = {
+  author: string;
+  authorRole: string;
+  body: string;
+  createdAt: string;
+};
+
 export type ApiDetail = {
   request: ApiSummary;
   history: ApiHistoryItem[];
@@ -149,6 +159,8 @@ export type ApiDetail = {
   feedback: { rating: number; comment: string | null; submittedAt: string } | null;
   canGiveFeedback: boolean;
   messages: ApiMessage[];
+  comments: ApiComment[];
+  canComment: boolean;
 };
 
 export type ApiChangeResult = { request: ApiDetail; warnings: string[] };

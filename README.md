@@ -35,7 +35,7 @@ Design patterns used: **State** (request lifecycle), **Observer** (status-change
 
 You need JDK 21, Maven, Tomcat 10.1, PostgreSQL 16 and Node or Bun.
 
-1. **Database:** run `database/V0` to `V6` in order.
+1. **Database:** run `database/V0` to `V7` in order.
 2. **Backend:** set `CIVIC_DB_URL`, `CIVIC_DB_USER` and `CIVIC_DB_PASSWORD` (see `.env.example`), run `mvn package`, and deploy to Tomcat on port **8081**.
 3. **Frontend:** in `CivicConnect-Frontend/`, run `bun install` and then `bun run dev`. The app opens at http://localhost:8080.
 
@@ -68,7 +68,7 @@ GitHub Actions runs the backend tests (against a disposable PostgreSQL) and the 
 CivicConnect-Frontend/   React app
 src/main/java/...        api · auth · service · lifecycle · notification · data · reporting · web
 src/main/webapp/         JSP dashboard, context.xml (no secrets committed)
-database/                V0–V6 SQL migrations (V4 and V6 are demo data only)
+database/                V0–V7 SQL migrations (V4 and V6 are demo data only)
 docs/                    API reference, data model, ADRs
 ```
 

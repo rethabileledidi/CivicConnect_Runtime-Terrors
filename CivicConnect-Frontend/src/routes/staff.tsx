@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  addComment,
   ApiError,
   changeStatus,
   errorMessage,
@@ -337,6 +338,8 @@ function RequestPanel({
         </p>
       )}
 
+      {request.canComment && <CommentsSection request={request} onChanged={onChanged} />}
+
       <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Audit trail (append-only)
       </h3>
@@ -370,5 +373,85 @@ function RequestPanel({
         </>
       )}
     </article>
+  );
+}
+
+/** FR-09: internal staff comments. Residents never receive them; the server stamps author and time. */
+function CommentsSection({
+  request,
+  onChanged,
+}: {
+  request: ServiceRequest;
+  onChanged: (r: ServiceRequest) => void;
+}) {
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const MAX = 1000;
+
+  useEffect(() => setBody(""), [request.numericId]);
+
+  async function submit() {
+    const text = body.trim();
+    if (!text) {
+      toast.error("Write a comment first.");
+      return;
+    }
+    if (text.length > MAX) {
+      toast.error(`Comments can be at most ${MAX} characters.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await addComment(request.numericId, text);
+      setBody("");
+      toast.success("Comment added.");
+      onChanged(updated);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-label="Staff comments" className="mt-6">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        Staff comments <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px]">INTERNAL</span>
+      </h3>
+      {request.comments.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {request.comments.map((c, i) => (
+            <li key={i} className="rounded-xl bg-secondary/50 px-4 py-2 text-sm">
+              <p className="whitespace-pre-wrap">{c.body}</p>
+              <p className="mt-1 text-xs text-muted-foreground/70">
+                {formatDate(c.createdAt)} • {c.author}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-muted-foreground">No comments yet.</p>
+      )}
+      <div className="mt-3">
+        <Label htmlFor="comment">Add a comment (not visible to the resident)</Label>
+        <Textarea
+          id="comment"
+          rows={2}
+          className="bg-card"
+          maxLength={MAX}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="e.g. Waiting for a replacement valve from stores."
+        />
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            {body.length}/{MAX}
+          </span>
+          <Button disabled={busy || !body.trim()} className="rounded-full" onClick={() => void submit()}>
+            Add comment
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
